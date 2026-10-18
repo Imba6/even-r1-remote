@@ -37,3 +37,18 @@ every real gesture several times, verify swipe direction and hold release, idle
 behavior, out-of-range reconnect, manual disconnect and foreground input actions.
 A connected but silent ring remains unsupported until passive-compatible firmware
 or a safe documented initialization sequence is established.
+
+## Subsequent Windows hardware observations (2026-10-19)
+
+After connecting the motherboard antenna, Windows discovery saw 17 BLE devices
+including the named R1 with advertisement RSSI -69 dBm. A subsequent scan missed
+the ring, but lookup by its already observed address in the Windows cache and an
+uncached GATT service query both succeeded. Connection therefore must not depend
+on a second advertisement after selection.
+
+BAE80011 subscription succeeded without pairing. BAE80013 required authentication;
+standard Windows pairing succeeded, after which both subscriptions succeeded.
+Raw notifications during user gesture attempts included shapes 00 09 8C 00 xx,
+00 09 8B 00 xx xx and 00 1A 89 01 01 00 00. Their semantics remain unverified;
+they are not reclassified as gestures. No known FF or 00 09 61 00 gesture packets
+were captured. Hardware gesture control remains unvalidated.

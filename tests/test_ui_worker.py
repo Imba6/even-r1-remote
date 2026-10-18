@@ -51,8 +51,10 @@ def test_scan_button_delivers_real_worker_signals(app, window, monkeypatch, ring
         assert window.status.text().startswith("Scan complete")
         if rings:
             assert window.devices.currentData() == "AA:BB:CC:DD:EE:FF"
+            assert window.found_devices["AA:BB:CC:DD:EE:FF"] is rings[0][0]
         else:
             assert "no ring found" in window.status.text()
+            assert window.found_devices == {}
 
 
 def test_scan_failure_stays_visible_after_thread_exits(app, window, monkeypatch):
@@ -65,3 +67,51 @@ def test_scan_failure_stays_visible_after_thread_exits(app, window, monkeypatch)
     assert window.status.text() == "Bluetooth unavailable"
     assert "Radio unavailable for test" in window.log.toPlainText()
     assert window.scan_button.isEnabled()
+
+
+def test_connect_passes_selected_discovered_device_to_transport(app, window, monkeypatch):
+    first = SimpleNamespace(address="AA:BB:CC:DD:EE:01")
+    selected = SimpleNamespace(address="AA:BB:CC:DD:EE:02")
+    calls = []
+
+    async def scan(transport, timeout=8):
+        return [(first, "EVEN R1_first", -60), (selected, "EVEN R1_selected", -55)]
+
+    async def run(transport, address, *, discovered_device=None):
+        calls.append((address, discovered_device))
+        await asyncio.sleep(.02)
+
+    monkeypatch.setattr(ui.Transport, "scan", scan)
+    monkeypatch.setattr(ui.Transport, "run", run)
+    window.scan_button.click()
+    wait_for_worker(app, window)
+    window.devices.setCurrentIndex(1)
+    window.connect_button.click()
+    wait_for_worker(app, window)
+
+    assert len(calls) == 1
+    assert calls[0][0] == selected.address
+    assert calls[0][1] is selected
+    assert window.worker.discovered_device is selected
+
+
+def test_new_scan_drops_stale_discovered_device(app, window, monkeypatch):
+    old_device = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+    window.on_transport_event("devices", [(old_device, "EVEN R1_old", -55)])
+    calls = []
+
+    async def scan(transport, timeout=8):
+        return []
+
+    async def run(transport, address, *, discovered_device=None):
+        calls.append((address, discovered_device))
+
+    monkeypatch.setattr(ui.Transport, "scan", scan)
+    monkeypatch.setattr(ui.Transport, "run", run)
+    window.scan_button.click()
+    wait_for_worker(app, window)
+    assert window.found_devices == {}
+
+    window.start_worker(old_device.address)
+    wait_for_worker(app, window)
+    assert calls == [(old_device.address, None)]

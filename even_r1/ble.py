@@ -3,6 +3,7 @@ import asyncio
 import logging
 from bleak import BleakClient, BleakScanner
 from .protocol import decode
+from .windows_discovery import cached_ring
 
 SERVICE = "bae80001-4f05-4503-8e65-3af1f7329d1f"
 NOTIFY = {f"bae800{x}-4f05-4503-8e65-3af1f7329d1f" for x in ("11", "13")}
@@ -49,9 +50,14 @@ class Transport:
                 for char in service.characteristics:
                     self.emit("gatt", f"  {char.uuid} [{', '.join(char.properties)}]")
                     if service.uuid.lower() == SERVICE and char.uuid.lower() in NOTIFY and "notify" in char.properties:
-                        await client.start_notify(char, self.notification)
-                        count += 1
-            if not count: raise RuntimeError("No supported gesture notification characteristics found")
+                        try:
+                            await client.start_notify(char, self.notification)
+                        except Exception as exc:
+                            self.emit("log", f"Notification unavailable on {char.uuid}: {exc}")
+                        else:
+                            count += 1
+                            self.emit("log", f"Listening on {char.uuid}")
+            if not count: raise RuntimeError("No supported gesture notification subscriptions succeeded; see Diagnostics for details")
             self.emit("status", "Connected · listening")
             battery = client.services.get_characteristic(BATTERY)
             async def read_battery():
@@ -70,12 +76,19 @@ class Transport:
                     elapsed = 0
         self.emit("battery", None)
         self.emit("status", "Disconnected")
-    async def run(self, address, reconnect=True):
+    async def run(self, address, reconnect=True, discovered_device=None):
         delay = 1
         while not self.stop.is_set():
             try:
-                rings = await self.scan()
-                match = next((d for d, _, _ in rings if d.address.lower() == address.lower()), None)
+                match = discovered_device
+                discovered_device = None
+                if match is None or match.address.lower() != address.lower():
+                    rings = await self.scan()
+                    match = next((d for d, _, _ in rings if d.address.lower() == address.lower()), None)
+                    if match is None:
+                        match = await cached_ring(address)
+                        if match is not None:
+                            self.emit("log", "Using the ring identity already known to Windows; live connection is still required")
                 if match is None: raise RuntimeError("Saved ring not advertising; wake it and release other BLE connections")
                 await self.connect_once(match)
                 delay = 1

@@ -3,13 +3,16 @@
 Independent Windows 11 desktop remote for the Even Realities R1. Direct BLE,
 local settings, no G2 dependency, no cloud and no firmware changes.
 
-**Experimental: real ring notifications have not been validated.** The development
-PC can scan with Bluetooth enabled, but has not found an R1 advertisement yet.
-Firmware requiring initialization may remain
-silent: this app sends no application characteristic writes.
+**Experimental: gesture control is not yet validated on hardware.** Actual R1
+discovery, Windows pairing, GATT enumeration and notifications on BAE80011/13
+have been observed. The captured notification formats did not match documented
+gesture packets, so no hardware gesture-to-action success is claimed. This app
+sends no application characteristic writes.
 
 Version 0.1.1 fixes an unresponsive Scan button caused by a Qt worker signal
 collision. Diagnostics now reports both all BLE devices seen and R1 matches.
+Version 0.1.2 preserves a selected discovered device through connection setup and
+keeps available notification channels active if another channel is protected.
 
 ![Desktop](docs/desktop.png)
 
@@ -77,6 +80,9 @@ settings.py profiles/persistence, startup.py Run registration and ui.py Qt UI.
   move closer and disconnect competing applications if no advertisement appears.
 - Connected but silent: export Diagnostics. Initialization remains unverified;
   do not send arbitrary commands. No speculative initialization feature exists.
+- A notification channel requires authentication: pair the selected R1 in Windows
+  Bluetooth settings. In the observed test, standard Windows pairing enabled
+  access to BAE80013. Available channels stay active if another subscription fails.
 - Battery unavailable: standard 2A19 may be absent. Proprietary health is not queried.
 - Swipe direction: swap mappings if desired; charger up maps to backward and
   down to forward to preserve Hermes event semantics.

@@ -17,9 +17,10 @@ from .startup import startup_enabled, set_startup
 
 class Worker(QThread):
     update_ready = Signal(str, object)
-    def __init__(self, address=None):
+    def __init__(self, address=None, discovered_device=None):
         super().__init__()
         self.address = address
+        self.discovered_device = discovered_device
         self.loop = None
         self.transport = None
         self.cancelled = False
@@ -32,7 +33,7 @@ class Worker(QThread):
             self.transport = Transport(self.publish)
             if self.cancelled: return
             try:
-                if self.address: await self.transport.run(self.address)
+                if self.address: await self.transport.run(self.address, discovered_device=self.discovered_device)
                 else: self.publish("devices", await self.transport.scan())
             except Exception as exc:
                 logging.exception("Bluetooth worker")
@@ -77,6 +78,7 @@ class Window(QMainWindow):
         self.settings = Settings()
         self.actions = Actions(self.settings)
         self.worker = None
+        self.found_devices = {}
         self.quitting = False
         self.setWindowTitle("Even R1 Remote")
         self.resize(1000, 790)
@@ -191,7 +193,7 @@ class Window(QMainWindow):
         dl.addWidget(self.log)
         dl.addWidget(button("Export diagnostic log…", self.export))
         self.tabs.addTab(diag, "Diagnostics")
-        footer = QLabel("INDEPENDENT PROJECT     /     Hardware compatibility awaits real notification validation")
+        footer = QLabel("INDEPENDENT PROJECT     /     Gesture control awaits hardware validation")
         footer.setObjectName("muted")
         layout.addWidget(footer)
         self.load_mapping()
@@ -258,7 +260,7 @@ class Window(QMainWindow):
             self.profile.setCurrentText(name)
     def start_worker(self, address=None):
         if self.worker and self.worker.isRunning(): return
-        self.worker = Worker(address)
+        self.worker = Worker(address, discovered_device=self.found_devices.get(address))
         self.worker.update_ready.connect(self.on_transport_event)
         self.worker.finished.connect(self.finished)
         self.scan_button.setEnabled(False)
@@ -285,7 +287,9 @@ class Window(QMainWindow):
         stamp = datetime.now().strftime("%H:%M:%S")
         if kind == "devices":
             self.devices.clear()
+            self.found_devices.clear()
             for device, name, rssi in value:
+                self.found_devices[device.address] = device
                 self.devices.addItem(f"{name}  ·  {device.address}  ·  {rssi} dBm (scan)", device.address)
             if not value: self.devices.addItem("No ring found · wake ring and scan again", "")
             self.status.setText(f"Scan complete · {len(value)} ring(s) found" if value else "Scan complete · no ring found")
