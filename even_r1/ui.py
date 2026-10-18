@@ -120,7 +120,10 @@ class Window(QMainWindow):
         connect = QHBoxLayout()
         self.devices = QComboBox()
         self.devices.setMinimumWidth(390)
-        self.devices.addItem("Scan to find your Even R1", "")
+        if self.settings.data["address"]:
+            self.devices.addItem(f"Saved ring · {self.settings.data['address']}", self.settings.data["address"])
+        else:
+            self.devices.addItem("Scan to find your Even R1", "")
         connect.addWidget(self.devices, 1)
         self.scan_button = button("Scan for ring", self.scan)
         connect.addWidget(self.scan_button)

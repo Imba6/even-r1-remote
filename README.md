@@ -48,7 +48,8 @@ Connected means subscriptions succeeded, not proof of functioning gestures.
 
 ## Record data for gesture research
 
-Open **Data capture** after connecting the ring. Press **Start recording** to
+Connect the selected ring (a saved ring can be selected before scanning), then
+open **Data capture**. Press **Start recording** to
 create a new local JSONL file. Windows controls are paused and disabled while
 recording. The displayed path is saved immediately; every record is flushed to
 disk, independently of the short live preview.
