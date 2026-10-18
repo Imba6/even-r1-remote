@@ -4,8 +4,12 @@ Independent Windows 11 desktop remote for the Even Realities R1. Direct BLE,
 local settings, no G2 dependency, no cloud and no firmware changes.
 
 **Experimental: real ring notifications have not been validated.** The development
-PC reported Bluetooth powered off. Firmware requiring initialization may remain
+PC can scan with Bluetooth enabled, but has not found an R1 advertisement yet.
+Firmware requiring initialization may remain
 silent: this app sends no application characteristic writes.
+
+Version 0.1.1 fixes an unresponsive Scan button caused by a Qt worker signal
+collision. Diagnostics now reports both all BLE devices seen and R1 matches.
 
 ![Desktop](docs/desktop.png)
 

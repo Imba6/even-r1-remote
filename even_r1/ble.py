@@ -15,12 +15,17 @@ class Transport:
         self.seen_ticks = set()
     async def scan(self, timeout=8):
         self.emit("status", "Scanning")
-        found = await BleakScanner.discover(timeout=timeout, return_adv=True)
+        try:
+            async with asyncio.timeout(timeout + 15):
+                found = await BleakScanner.discover(timeout=timeout, return_adv=True)
+        except TimeoutError as exc:
+            raise RuntimeError("Bluetooth scan timed out. Check the adapter and try again.") from exc
         rings = []
         for device, adv in found.values():
             name = adv.local_name or device.name or ""
             if name.upper().startswith("EVEN R1") or SERVICE in [s.lower() for s in adv.service_uuids]:
                 rings.append((device, name, adv.rssi))
+        self.emit("log", f"Scan received {len(found)} BLE device(s); {len(rings)} matched Even R1")
         return rings
     def notification(self, sender, data):
         raw = bytes(data)

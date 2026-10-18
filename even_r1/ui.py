@@ -16,28 +16,28 @@ from .protocol import Gesture
 from .startup import startup_enabled, set_startup
 
 class Worker(QThread):
-    event = Signal(str, object)
+    update_ready = Signal(str, object)
     def __init__(self, address=None):
         super().__init__()
         self.address = address
         self.loop = None
         self.transport = None
         self.cancelled = False
-    def emit(self, kind, value):
+    def publish(self, kind, value):
         logging.info("%s %s", kind, value)
-        self.event.emit(kind, value)
+        self.update_ready.emit(kind, value)
     def run(self):
         async def work():
             self.loop = asyncio.get_running_loop()
-            self.transport = Transport(self.emit)
+            self.transport = Transport(self.publish)
             if self.cancelled: return
             try:
                 if self.address: await self.transport.run(self.address)
-                else: self.emit("devices", await self.transport.scan())
+                else: self.publish("devices", await self.transport.scan())
             except Exception as exc:
                 logging.exception("Bluetooth worker")
-                self.emit("log", str(exc))
-                self.emit("status", "Bluetooth unavailable")
+                self.publish("log", str(exc))
+                self.publish("status", "Bluetooth unavailable")
         asyncio.run(work())
     def stop(self):
         self.cancelled = True
@@ -259,7 +259,7 @@ class Window(QMainWindow):
     def start_worker(self, address=None):
         if self.worker and self.worker.isRunning(): return
         self.worker = Worker(address)
-        self.worker.event.connect(self.on_transport_event)
+        self.worker.update_ready.connect(self.on_transport_event)
         self.worker.finished.connect(self.finished)
         self.scan_button.setEnabled(False)
         self.connect_button.setEnabled(False)
@@ -267,7 +267,8 @@ class Window(QMainWindow):
     def finished(self):
         self.scan_button.setEnabled(True)
         self.connect_button.setEnabled(True)
-        self.status.setText("Disconnected")
+        if self.worker.address:
+            self.status.setText("Disconnected")
         self.battery.setText("Battery —   ·   Signal —")
     def scan(self): self.start_worker()
     def connect_ring(self):
@@ -287,6 +288,7 @@ class Window(QMainWindow):
             for device, name, rssi in value:
                 self.devices.addItem(f"{name}  ·  {device.address}  ·  {rssi} dBm (scan)", device.address)
             if not value: self.devices.addItem("No ring found · wake ring and scan again", "")
+            self.status.setText(f"Scan complete · {len(value)} ring(s) found" if value else "Scan complete · no ring found")
         elif kind == "status":
             self.status.setText(value)
             if not value.startswith("Connected"):
