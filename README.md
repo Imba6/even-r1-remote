@@ -13,6 +13,7 @@ Version 0.1.1 fixes an unresponsive Scan button caused by a Qt worker signal
 collision. Diagnostics now reports both all BLE devices seen and R1 matches.
 Version 0.1.2 preserves a selected discovered device through connection setup and
 keeps available notification channels active if another channel is protected.
+Version 0.1.3 adds raw capture sessions with labelled, timed repetitions.
 
 ![Desktop](docs/desktop.png)
 
@@ -45,6 +46,32 @@ Connected means subscriptions succeeded, not proof of functioning gestures.
 - Optional current-user Windows startup registration; controls start paused.
 - Standard battery reads when available. RSSI is explicitly the last scan value.
 
+## Record data for gesture research
+
+Open **Data capture** after connecting the ring. Press **Start recording** to
+create a new local JSONL file. Windows controls are paused and disabled while
+recording. The displayed path is saved immediately; every record is flushed to
+disk, independently of the short live preview.
+
+Select an action, leave the default five repetitions, and press **Run selected
+action**. Remain still during the initial five-second baseline. Each repetition
+has a three-second countdown, a five-second action window, and three seconds of
+rest. Perform the selected gesture **once** during each **DO ONCE** window. Then
+select another action and run its series in the same recording. Custom action
+labels and optional manual markers are supported. A disconnect cancels the
+current series; logging continues through reconnects until **Stop & save**.
+
+Captures live in `%LOCALAPPDATA%\EvenR1Remote\captures`. **Open capture folder**
+opens that location. Session files contain exact notification hex, length,
+characteristic UUID, optional handle, connection/sequence identifiers, UTC time
+and a monotonic clock timestamp. Duplicates and unknown packets are retained
+before decoding or debounce. Trial boundaries carry the intended action label,
+repetition and trial ID. Notifications are attributed using their source timestamp,
+even when UI delivery is delayed. Labels do not establish a packet's meaning.
+
+Files stay on this PC and are not uploaded. Recording does not query health data
+or send initialization commands; it records notifications the ring sends.
+
 ## Development and packaging
 
 ```powershell
@@ -62,6 +89,7 @@ Read-only diagnostics, with no Windows input simulation:
 ```powershell
 python -m even_r1.diagnostics
 python -m even_r1.diagnostics --address AA:BB:CC:DD:EE:FF --seconds 60
+python -m even_r1.diagnostics --address AA:BB:CC:DD:EE:FF --seconds 60 --record --label "single tap"
 ```
 
 Build a portable exe:

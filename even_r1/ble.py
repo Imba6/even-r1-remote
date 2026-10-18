@@ -1,6 +1,9 @@
 """Passive gesture transport. Never writes application characteristic values."""
 import asyncio
+from datetime import datetime, timezone
 import logging
+from time import perf_counter_ns
+from uuid import uuid4
 from bleak import BleakClient, BleakScanner
 from .protocol import decode
 from .windows_discovery import cached_ring
@@ -14,6 +17,8 @@ class Transport:
         self.emit = emit
         self.stop = asyncio.Event()
         self.seen_ticks = set()
+        self.connection_id = None
+        self.sequence = 0
     async def scan(self, timeout=8):
         self.emit("status", "Scanning")
         try:
@@ -30,6 +35,17 @@ class Transport:
         return rings
     def notification(self, sender, data):
         raw = bytes(data)
+        self.sequence += 1
+        self.emit("raw_packet", {
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="microseconds"),
+            "monotonic_ns": perf_counter_ns(),
+            "characteristic": str(sender.uuid),
+            "handle": getattr(sender, "handle", None),
+            "length": len(raw),
+            "hex": raw.hex(" ").upper(),
+            "connection_id": self.connection_id,
+            "sequence": self.sequence,
+        })
         self.emit("packet", f"{sender.uuid}  {raw.hex(' ').upper()}")
         event = decode(raw)
         if event:
@@ -41,6 +57,8 @@ class Transport:
             self.emit("gesture", event)
     async def connect_once(self, device):
         disconnected = asyncio.Event()
+        self.connection_id = str(uuid4())
+        self.sequence = 0
         self.seen_ticks.clear()
         self.emit("status", "Connecting")
         async with BleakClient(device, disconnected_callback=lambda _: disconnected.set(), timeout=25) as client:

@@ -14,6 +14,8 @@ from .settings import Settings, ACTIONS, ROOT, setup_logging
 from .actions import Actions
 from .protocol import Gesture
 from .startup import startup_enabled, set_startup
+from .capture_ui import CapturePanel
+from . import __version__
 
 class Worker(QThread):
     update_ready = Signal(str, object)
@@ -80,7 +82,7 @@ class Window(QMainWindow):
         self.worker = None
         self.found_devices = {}
         self.quitting = False
-        self.setWindowTitle("Even R1 Remote")
+        self.setWindowTitle(f"Even R1 Remote · {__version__}")
         self.resize(1000, 790)
         self.setMinimumSize(840, 680)
         root = QWidget()
@@ -193,6 +195,9 @@ class Window(QMainWindow):
         dl.addWidget(self.log)
         dl.addWidget(button("Export diagnostic log…", self.export))
         self.tabs.addTab(diag, "Diagnostics")
+        self.capture_panel = CapturePanel(self.capture_metadata)
+        self.capture_panel.recording_changed.connect(self.capture_recording_changed)
+        self.tabs.addTab(self.capture_panel, "Data capture")
         footer = QLabel("INDEPENDENT PROJECT     /     Gesture control awaits hardware validation")
         footer.setObjectName("muted")
         layout.addWidget(footer)
@@ -270,7 +275,7 @@ class Window(QMainWindow):
         self.scan_button.setEnabled(True)
         self.connect_button.setEnabled(True)
         if self.worker.address:
-            self.status.setText("Disconnected")
+            self.on_transport_event("status", "Disconnected")
         self.battery.setText("Battery —   ·   Signal —")
     def scan(self): self.start_worker()
     def connect_ring(self):
@@ -282,9 +287,18 @@ class Window(QMainWindow):
     def disconnect_ring(self):
         self.enable.setChecked(False)
         if self.worker: self.worker.stop()
-        self.status.setText("Disconnecting")
+        self.on_transport_event("status", "Disconnecting")
+    def capture_metadata(self):
+        return {"app_version": __version__, "address": self.worker.address if self.worker else self.settings.data["address"], "status_at_start": self.status.text()}
+    def capture_recording_changed(self, active):
+        if active:
+            self.enable.setChecked(False)
+        self.enable.setEnabled(not active)
     def on_transport_event(self, kind, value):
-        stamp = datetime.now().strftime("%H:%M:%S")
+        self.capture_panel.feed(kind, value)
+        if kind == "raw_packet":
+            return
+        stamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         if kind == "devices":
             self.devices.clear()
             self.found_devices.clear()
@@ -323,10 +337,15 @@ class Window(QMainWindow):
         elif self.worker and self.worker.isRunning():
             self.quit()
             event.ignore()
-        else: event.accept()
+        else:
+            if self.capture_panel.recording:
+                self.capture_panel.stop_recording("window close")
+            event.accept()
     def quit(self):
         self.quitting = True
         self.enable.setChecked(False)
+        if self.capture_panel.recording:
+            self.capture_panel.stop_recording("application exit")
         if self.worker and self.worker.isRunning():
             self.worker.stop()
             self.status.setText("Closing Bluetooth session…")
