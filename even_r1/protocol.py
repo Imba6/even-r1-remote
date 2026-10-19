@@ -1,4 +1,8 @@
-"""Gesture semantics ported from Hermes G2 (GPL-3.0); see THIRD_PARTY.md."""
+"""Hermes gesture semantics plus a locally observed R1 tap-then-hold extension.
+
+The original decoder is GPL-3.0; see THIRD_PARTY.md. The bounded 09/0200
+extension follows the owner's gesture report and matching physical repetitions.
+"""
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -9,6 +13,7 @@ class Gesture(StrEnum):
     RELEASE = "Long press release"
     FORWARD = "Swipe forward"
     BACKWARD = "Swipe backward"
+    TAP_HOLD = "Tap then long press"
 
 @dataclass(frozen=True)
 class Event:
@@ -29,6 +34,8 @@ def decode(raw: bytes) -> Event | None:
         gesture = {0: Gesture.HOLD, 1: Gesture.TAP, 2: Gesture.DOUBLE,
                    4: Gesture.BACKWARD, 5: Gesture.FORWARD,
                    8: Gesture.RELEASE}.get(raw[4])
+        if raw[4] == 9 and raw[5:7] == b"\x02\x00":
+            gesture = Gesture.TAP_HOLD
         if gesture:
             return Event(gesture, "charger", int.from_bytes(raw[5:7], "little"),
                          int.from_bytes(raw[7:11], "little"))

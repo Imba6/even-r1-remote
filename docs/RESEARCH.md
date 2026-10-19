@@ -103,7 +103,30 @@ commands. Subscription refresh does not resend activation. An unavailable or
 failed write preserves raw reception and produces an explicit sensor state.
 The CLI remains passive with application activation disabled.
 
-Unknown eleven-byte codes 09 and 0A were also observed and remain ignored for
-actions. The supported decoder still matches Hermes. Its combined parameter
+Unknown eleven-byte codes 09 and 0A were also observed; 0A remains ignored for
+actions, while the later bounded 09 extension is documented below. The original
+supported decoder matches Hermes. Its combined parameter
 field preserves the two wire bytes; firmware reconstruction calls them distance
 and velocity. Actions do not depend on that combined value.
+
+## Tap then long press extension (2026-10-19)
+
+The owner identified code 09 as tap then long press in the official application
+and repeated the requested combination. Observed eleven-byte packets consistently
+use `00 09 61 00 09 02 00`, following two 0A notifications and preceding an 08
+release. Firmware tick spacing distinguishes the held second contact from an
+ordinary double tap. The earlier logs contain no synchronized per-trial labels,
+so no exact three-for-three trial count is inferred from them.
+
+Even's [Menu guide](https://support.evenrealities.com/hc/en-us/articles/14269160297999-Menu)
+documents a short tap followed by holding the second contact for one second for
+firmware 2.2.9 or later. The [control guide](https://support.evenrealities.com/hc/en-us/articles/13772400722063-How-to-Control)
+also lists this combination. These sources establish the gesture's existence;
+they do not define its BLE code. The code mapping is based on the owner's report
+and the matching local notifications.
+
+Version 0.1.7 recognizes only code 09 with exact parameter 02 00 in the known
+eleven-byte frame. It emits one Tap then long press event rather than inventing
+separate tap/hold events. Generic release handling is unchanged. Other 09
+parameters and 0A remain ignored for actions. Existing profiles retain their
+mappings; this new gesture defaults to Disabled.

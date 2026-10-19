@@ -6,6 +6,12 @@ Original attribution belongs to Hermes G2 / Faceclaw contributors. The upstream
 project is GPL-3.0; this derivative is distributed under GPL-3.0-or-later.
 https://github.com/not-benny/hermes-g2
 
+The tap-then-long-press extension (11-byte code 09, parameter 02 00) is based on
+the owner's local R1 observations and repetitions, alongside Even's public
+description of the combined gesture. It is not present in the pinned Hermes
+decoder.
+https://support.evenrealities.com/hc/en-us/articles/14269160297999-Menu
+
 The fixed touch-source enable request and protocol layout were independently
 implemented from public reverse-engineering facts in evenRealities-openCFW,
 revision 5a55562c8a4fb2ac52fa791c0ca7c4e4131e5395 (touch handler, RAM source

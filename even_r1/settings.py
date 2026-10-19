@@ -11,7 +11,15 @@ ACTIONS = ["Disabled", "Scroll up", "Scroll down", "Volume up", "Volume down",
            "Left click", "Right click", "Middle click"]
 
 def defaults():
-    base = dict(zip(Gesture, ["Play/pause", "Next track", "Disabled", "Disabled", "Scroll down", "Scroll up"]))
+    base = {
+        Gesture.TAP: "Play/pause",
+        Gesture.DOUBLE: "Next track",
+        Gesture.HOLD: "Disabled",
+        Gesture.RELEASE: "Disabled",
+        Gesture.FORWARD: "Scroll down",
+        Gesture.BACKWARD: "Scroll up",
+        Gesture.TAP_HOLD: "Disabled",
+    }
     profiles = {}
     for name in ["Default", "Media", "Browser", "Presentation"]:
         profiles[name] = {g: {"action": a, "hotkey": ""} for g, a in base.items()}

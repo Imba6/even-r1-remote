@@ -4,8 +4,8 @@ Independent Windows 11 desktop remote for the Even Realities R1. Direct BLE,
 local settings, no G2 dependency, no cloud and no firmware changes.
 
 **Experimental: real R1 gesture reception has been observed on one ring.**
-Windows discovery, pairing, both notification subscriptions and all six supported
-gesture codes have been captured. The desktop app sends one fixed, documented
+Windows discovery, pairing, both notification subscriptions and all seven supported
+gesture types have been captured. The desktop app sends one fixed, documented
 touch-sensor enable request after subscribing. Windows input actions and broad
 firmware compatibility still require validation; controls start paused.
 
@@ -17,6 +17,7 @@ Version 0.1.3 adds raw capture sessions with labelled, timed repetitions.
 Version 0.1.4 adds an All packets tab with the complete notification history.
 Version 0.1.5 adds receive health and manual subscription refresh.
 Version 0.1.6 enables the ring's touch source once after each connection.
+Version 0.1.7 recognizes tap then long press as a separate configurable gesture.
 
 ![Desktop](docs/desktop.png)
 
@@ -47,7 +48,7 @@ not establish reception.
 
 - Two supported notification channels, touch-source activation, GATT enumeration,
   raw packet diagnostics.
-- Single/double tap, long press/release, forward/backward swipe.
+- Single/double tap, long press/release, forward/backward swipe, tap then long press.
 - Scroll, optional acceleration, volume/media, mouse clicks, custom shortcuts.
 - Default, Media, Browser, Presentation and duplicate-to-custom profiles.
 - Auto-connect to a saved ring, reconnect backoff, tray pause and minimize.
@@ -73,6 +74,12 @@ the active notification channels using standard CCCD operations. It sends no
 application commands. Windows connections discover fresh services, and intentional
 disconnects disable active subscriptions before closing the connection.
 Refresh does not repeatedly send the touch-source enable request.
+
+**Tap then long press** is a separate mapping: make a short tap, then hold the
+second contact for about one second. The observed packet uses code 09 with
+parameter bytes 02 00. Its action defaults to Disabled in all profiles; select
+an action under Gesture mappings. It is not synthesized from separate single
+tap and long-press actions. Other code-09 parameters and code 0A remain unknown.
 
 Connect the selected ring (a saved ring can be selected before scanning), then
 open **Data capture**. Press **Start recording** to
