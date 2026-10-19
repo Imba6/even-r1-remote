@@ -14,6 +14,7 @@ collision. Diagnostics now reports both all BLE devices seen and R1 matches.
 Version 0.1.2 preserves a selected discovered device through connection setup and
 keeps available notification channels active if another channel is protected.
 Version 0.1.3 adds raw capture sessions with labelled, timed repetitions.
+Version 0.1.4 adds an All packets tab with the complete notification history.
 
 ![Desktop](docs/desktop.png)
 
@@ -48,11 +49,20 @@ Connected means subscriptions succeeded, not proof of functioning gestures.
 
 ## Record data for gesture research
 
+For visual inspection, open **All packets**. It shows every received notification
+from both subscribed channels, including unknown and duplicate packets, even when
+file recording is off. No old rows are discarded during the current app run.
+Turn off **Auto-scroll** to inspect earlier data; **Find next** searches the full
+history without filtering it. **Load JSONL** loads earlier notifications, marked
+FILE, while incoming live notifications are marked RX. **Export all text** saves
+the entire displayed history. The recording indicator independently shows whether
+new live data is being saved to a capture file.
+
 Connect the selected ring (a saved ring can be selected before scanning), then
 open **Data capture**. Press **Start recording** to
 create a new local JSONL file. Windows controls are paused and disabled while
 recording. The displayed path is saved immediately; every record is flushed to
-disk, independently of the short live preview.
+disk, independently of the live display.
 
 Select an action, leave the default five repetitions, and press **Run selected
 action**. Remain still during the initial five-second baseline. Each repetition

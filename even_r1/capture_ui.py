@@ -79,8 +79,8 @@ class CapturePanel(QWidget):
         layout.addLayout(annotations)
         self.packets = QPlainTextEdit()
         self.packets.setReadOnly(True)
-        self.packets.document().setMaximumBlockCount(100)
-        self.packets.setPlaceholderText("Actual BLE notifications appear here. Every packet is saved to the JSONL file, including duplicates and unknown formats.")
+        self.packets.document().setMaximumBlockCount(0)
+        self.packets.setPlaceholderText("Actual BLE notifications appear here. Start recording saves new packets to JSONL. All received packets remain visible, including duplicates and unknown formats.")
         layout.addWidget(self.packets, 1)
         self.refresh()
 

@@ -15,6 +15,7 @@ from .actions import Actions
 from .protocol import Gesture
 from .startup import startup_enabled, set_startup
 from .capture_ui import CapturePanel
+from .packet_viewer import LivePacketViewer
 from . import __version__
 
 class Worker(QThread):
@@ -198,8 +199,11 @@ class Window(QMainWindow):
         dl.addWidget(self.log)
         dl.addWidget(button("Export diagnostic log…", self.export))
         self.tabs.addTab(diag, "Diagnostics")
+        self.packet_viewer = LivePacketViewer()
+        self.tabs.addTab(self.packet_viewer, "All packets")
         self.capture_panel = CapturePanel(self.capture_metadata)
         self.capture_panel.recording_changed.connect(self.capture_recording_changed)
+        self.capture_panel.recording_changed.connect(self.packet_viewer.set_recording)
         self.tabs.addTab(self.capture_panel, "Data capture")
         footer = QLabel("INDEPENDENT PROJECT     /     Gesture control awaits hardware validation")
         footer.setObjectName("muted")
@@ -300,6 +304,7 @@ class Window(QMainWindow):
     def on_transport_event(self, kind, value):
         self.capture_panel.feed(kind, value)
         if kind == "raw_packet":
+            self.packet_viewer.append_packet(value)
             return
         stamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         if kind == "devices":
@@ -382,6 +387,14 @@ def main():
     app.setStyleSheet(STYLE)
     window = Window()
     window.show()
+    if "--live-packets" in sys.argv:
+        window.tabs.setCurrentWidget(window.packet_viewer)
+    if "--packet-log" in sys.argv:
+        try:
+            window.packet_viewer.load_capture(sys.argv[sys.argv.index("--packet-log") + 1])
+            window.tabs.setCurrentWidget(window.packet_viewer)
+        except (IndexError, OSError, ValueError) as exc:
+            QMessageBox.warning(window, "Could not load packet history", str(exc))
     if "--smoke-test" in sys.argv:
         QTimer.singleShot(1200, window.quit)
     sys.exit(app.exec())
