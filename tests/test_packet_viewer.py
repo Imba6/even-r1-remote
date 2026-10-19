@@ -318,6 +318,44 @@ def test_health_heartbeat_updates_view_without_diagnostics_or_capture_spam(windo
     assert "7 live RX in current connection" in window.packet_viewer.health_label.text()
 
 
+def test_sensor_request_is_distinguished_from_actual_gestures_and_is_recorded(window):
+    window.on_transport_event("status", "Connected · waiting for first packet")
+    window.capture_panel.start_recording()
+    requested = {"connection_id": "test-connection", "state": "requested", "detail": "Enable request sent"}
+    window.on_transport_event("sensor_state", requested)
+    viewer = window.packet_viewer
+    assert "waiting for gesture packets" in viewer.sensor_label.text()
+    transport = Transport(window.on_transport_event)
+    channel = SimpleNamespace(uuid=sorted(NOTIFY)[0])
+    # Unknown code 0A stays visible but does not establish gesture readiness.
+    transport.notification(channel, bytes.fromhex("00 09 61 00 0A 00 00 01 00 00 00"))
+    assert viewer.live_count == 1 and not viewer.gesture_received
+    assert "waiting for gesture packets" in viewer.sensor_label.text()
+    transport.notification(channel, bytes.fromhex("00 09 61 00 01 00 00 02 00 00 00"))
+    assert viewer.live_count == 2 and viewer.gesture_received
+    assert "real gesture packets received" in viewer.sensor_label.text()
+    window.on_transport_event("sensor_state", requested)
+    assert "real gesture packets received" in viewer.sensor_label.text()
+    assert not window.enable.isChecked()
+    window.capture_panel.stop_recording()
+    rows = [json.loads(line) for line in window.capture_panel.last_path.read_text(encoding="utf-8").splitlines()]
+    sensor_events = [row for row in rows if row.get("kind") == "sensor_state"]
+    assert len(sensor_events) == 2
+    window.on_transport_event("status", "Disconnected")
+    assert not viewer.gesture_received
+    assert "waiting for a connection" in viewer.sensor_label.text()
+
+
+def test_sensor_failure_remains_visible_while_unknown_raw_packets_are_displayed(window):
+    window.on_transport_event("sensor_state", {"state": "error", "detail": "write timeout"})
+    assert "activation failed" in window.packet_viewer.sensor_label.text()
+    assert "write timeout" in window.packet_viewer.sensor_label.text()
+    transport = Transport(window.on_transport_event)
+    transport.notification(SimpleNamespace(uuid=sorted(NOTIFY)[0]), b"\xEE\x00")
+    assert window.packet_viewer.live_count == 1
+    assert "activation failed" in window.packet_viewer.sensor_label.text()
+
+
 def test_subscription_refresh_requires_an_active_connected_worker(window):
     window.worker = SimpleNamespace(isRunning=Mock(return_value=True), refresh_notifications=Mock())
     window.refresh_notifications()

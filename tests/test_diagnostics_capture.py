@@ -11,7 +11,9 @@ from even_r1.capture import CaptureSession
 
 def test_existing_scan_does_not_create_capture(monkeypatch, capsys):
     class Transport:
-        def __init__(self, emit): self.emit = emit
+        def __init__(self, emit, *, activate_sensor):
+            assert activate_sensor is False
+            self.emit = emit
         async def scan(self):
             self.emit("status", "Scanning")
             return [(SimpleNamespace(address="10:20:30:40:50:60"), "EVEN R1", -50)]
@@ -50,7 +52,9 @@ def test_cli_capture_closes_for_every_run_outcome(tmp_path, monkeypatch, capsys,
     packet = {"timestamp_utc": "2026-10-19T12:00:00+00:00", "characteristic": "bae80011",
               "handle": 23, "length": 3, "hex": "00ff00", "connection_id": "connection-1", "sequence": 1}
     class Transport:
-        def __init__(self, emit): self.emit = emit
+        def __init__(self, emit, *, activate_sensor):
+            assert activate_sensor is False
+            self.emit = emit
         async def run(self, address, reconnect):
             assert address == "10:20:30:40:50:60" and reconnect is False
             self.emit("status", "Connected")
@@ -94,7 +98,7 @@ def test_capture_stops_even_when_final_marker_fails(tmp_path, monkeypatch):
         if phase == "trial_end": raise OSError("marker failure")
         return original_marker(label, repetition, phase)
     class Transport:
-        def __init__(self, emit): pass
+        def __init__(self, emit, *, activate_sensor): assert activate_sensor is False
         async def run(self, address, reconnect): pass
     monkeypatch.setattr(session, "marker", marker)
     monkeypatch.setattr(diagnostics, "CaptureSession", lambda **kwargs: session)

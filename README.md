@@ -3,11 +3,11 @@
 Independent Windows 11 desktop remote for the Even Realities R1. Direct BLE,
 local settings, no G2 dependency, no cloud and no firmware changes.
 
-**Experimental: gesture control is not yet validated on hardware.** Actual R1
-discovery, Windows pairing, GATT enumeration and notifications on BAE80011/13
-have been observed. The captured notification formats did not match documented
-gesture packets, so no hardware gesture-to-action success is claimed. This app
-sends no application characteristic writes.
+**Experimental: real R1 gesture reception has been observed on one ring.**
+Windows discovery, pairing, both notification subscriptions and all six supported
+gesture codes have been captured. The desktop app sends one fixed, documented
+touch-sensor enable request after subscribing. Windows input actions and broad
+firmware compatibility still require validation; controls start paused.
 
 Version 0.1.1 fixes an unresponsive Scan button caused by a Qt worker signal
 collision. Diagnostics now reports both all BLE devices seen and R1 matches.
@@ -15,6 +15,8 @@ Version 0.1.2 preserves a selected discovered device through connection setup an
 keeps available notification channels active if another channel is protected.
 Version 0.1.3 adds raw capture sessions with labelled, timed repetitions.
 Version 0.1.4 adds an All packets tab with the complete notification history.
+Version 0.1.5 adds receive health and manual subscription refresh.
+Version 0.1.6 enables the ring's touch source once after each connection.
 
 ![Desktop](docs/desktop.png)
 
@@ -26,7 +28,8 @@ and run EvenR1Remote.exe. Python is not needed. This initial build is unsigned.
 
 1. Enable Windows Bluetooth, wake/charge the ring, and release other central
    connections (phone, glasses or another application).
-2. Scan, select your advertised Even R1 and connect.
+2. Scan, select your advertised Even R1 and connect. The app subscribes to both
+   channels and sends the touch-sensor enable request once for this connection.
 3. Keep Windows controls paused. Open Diagnostics and perform every gesture.
    Check actual notification bytes and decoded events before enabling controls.
 4. Choose a profile, configure mappings and enable Windows controls. Actions
@@ -35,11 +38,15 @@ and run EvenR1Remote.exe. Python is not needed. This initial build is unsigned.
 Follow Windows pairing prompts if presented. Manual pairing is available through
 Settings > Bluetooth & devices > Add device. First-time provisioning and fresh
 ring compatibility are unverified. The official app is not required at runtime.
-Connected means subscriptions succeeded, not proof of functioning gestures.
+The app distinguishes waiting for the first packet from receiving packets.
+The sensor indicator confirms actual gesture reception only after decoding a
+real gesture packet. Successful submission of the enable request alone does
+not establish reception.
 
 ## Features
 
-- Two supported notification channels, GATT enumeration, raw packet diagnostics.
+- Two supported notification channels, touch-source activation, GATT enumeration,
+  raw packet diagnostics.
 - Single/double tap, long press/release, forward/backward swipe.
 - Scroll, optional acceleration, volume/media, mouse clicks, custom shortcuts.
 - Default, Media, Browser, Presentation and duplicate-to-custom profiles.
@@ -65,6 +72,7 @@ shown as waiting for the first packet. **Refresh subscriptions** re-subscribes
 the active notification channels using standard CCCD operations. It sends no
 application commands. Windows connections discover fresh services, and intentional
 disconnects disable active subscriptions before closing the connection.
+Refresh does not repeatedly send the touch-source enable request.
 
 Connect the selected ring (a saved ring can be selected before scanning), then
 open **Data capture**. Press **Start recording** to
@@ -88,8 +96,9 @@ before decoding or debounce. Trial boundaries carry the intended action label,
 repetition and trial ID. Notifications are attributed using their source timestamp,
 even when UI delivery is delayed. Labels do not establish a packet's meaning.
 
-Files stay on this PC and are not uploaded. Recording does not query health data
-or send initialization commands; it records notifications the ring sends.
+Files stay on this PC and are not uploaded. Recording adds no commands and does
+not query health data. The desktop connection sends only the fixed touch-source
+enable request; all raw notifications the ring sends remain visible.
 
 ## Development and packaging
 
@@ -103,13 +112,17 @@ python -m pytest -q
 python tests/ui_smoke.py
 ```
 
-Read-only diagnostics, with no Windows input simulation:
+Passive diagnostics, with no application writes or Windows input simulation:
 
 ```powershell
 python -m even_r1.diagnostics
 python -m even_r1.diagnostics --address AA:BB:CC:DD:EE:FF --seconds 60
 python -m even_r1.diagnostics --address AA:BB:CC:DD:EE:FF --seconds 60 --record --label "single tap"
 ```
+
+The CLI intentionally does not activate the touch sensor. Use the desktop app
+for the connection and activation flow. To open directly on the packet viewer
+and connect to the saved ring, use `EvenR1Remote.exe --live-packets --connect`.
 
 Build a portable exe:
 
@@ -125,8 +138,10 @@ settings.py profiles/persistence, startup.py Run registration and ui.py Qt UI.
 
 - Bluetooth powered off: enable the radio and retry scanning. Wake the ring,
   move closer and disconnect competing applications if no advertisement appears.
-- Connected but silent: export Diagnostics. Initialization remains unverified;
-  do not send arbitrary commands. No speculative initialization feature exists.
+- Connected but silent: check the sensor indicator and Diagnostics for the
+  touch-source request, subscription errors and live RX count. Release other
+  central connections, take the ring off its charger and wear it for gestures.
+  Unknown packets remain raw data and are not assigned gesture meanings.
 - A notification channel requires authentication: pair the selected R1 in Windows
   Bluetooth settings. In the observed test, standard Windows pairing enabled
   access to BAE80013. Available channels stay active if another subscription fails.

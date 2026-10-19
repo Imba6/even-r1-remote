@@ -1,4 +1,4 @@
-"""Passive gesture transport. Never writes application characteristic values."""
+"""R1 gesture receive transport with one fixed, validated touch-source request."""
 import asyncio
 from datetime import datetime, timezone
 import logging
@@ -8,6 +8,7 @@ from uuid import uuid4
 from bleak import BleakClient, BleakScanner
 from .protocol import decode
 from .windows_discovery import cached_ring
+from .gesture_sensor import TOUCH_ENABLE_FRAME, TOUCH_ENABLE_UUID
 
 SERVICE = "bae80001-4f05-4503-8e65-3af1f7329d1f"
 NOTIFY = {f"bae800{x}-4f05-4503-8e65-3af1f7329d1f" for x in ("11", "13")}
@@ -16,8 +17,9 @@ SUBSCRIPTION_TIMEOUT = 8
 HEALTH_INTERVAL_NS = 2_000_000_000
 
 class Transport:
-    def __init__(self, emit):
+    def __init__(self, emit, *, activate_sensor=True):
         self.emit = emit
+        self.activate_sensor = activate_sensor
         self.stop = asyncio.Event()
         self.seen_ticks = set()
         self.connection_id = None
@@ -27,6 +29,7 @@ class Transport:
         self._connected_at_ns = None
         self._last_packet_ns = None
         self._phase = "disconnected"
+        self._sensor_attempted = False
     def request_refresh(self):
         """Coalesce manual requests; call this on the transport's asyncio loop."""
         if self._connected_at_ns is not None and self._subscribed:
@@ -130,6 +133,34 @@ class Transport:
             else:
                 self.emit("log", f"Stopped listening on {uuid}")
             self._subscribed.pop(uuid, None)
+    def _publish_sensor_state(self, state, detail):
+        self.emit("sensor_state", {"connection_id": self.connection_id, "state": state, "detail": detail})
+        self.emit("log", detail)
+    async def _enable_gesture_sensor(self, client):
+        """Submit only the fixed enable request once, after both notify channels."""
+        if self._sensor_attempted:
+            return
+        self._sensor_attempted = True
+        if not self.activate_sensor:
+            self._publish_sensor_state("unavailable", "Passive capture mode: touch activation is disabled")
+            return
+        if not NOTIFY.issubset(self._subscribed):
+            self._publish_sensor_state("unavailable", "Touch enable unavailable: both ring notification channels must be subscribed")
+            return
+        try:
+            char = client.services.get_characteristic(TOUCH_ENABLE_UUID)
+            if char is None or str(char.uuid).lower() != TOUCH_ENABLE_UUID or "write-without-response" not in char.properties:
+                self._publish_sensor_state("unavailable", "Touch enable unavailable: BAE80012 write-without-response characteristic is missing")
+                return
+            if self.stop.is_set() or not getattr(client, "is_connected", True):
+                self._publish_sensor_state("unavailable", "Touch enable cancelled: connection is stopping")
+                return
+            self._publish_sensor_state("enabling", "Submitting the fixed ring touch-source enable request")
+            await asyncio.wait_for(client.write_gatt_char(char, TOUCH_ENABLE_FRAME, response=False), SUBSCRIPTION_TIMEOUT)
+        except Exception as exc:
+            self._publish_sensor_state("error", f"Touch enable failed; raw packet reception remains active: {type(exc).__name__}: {exc}")
+        else:
+            self._publish_sensor_state("requested", "Touch enable request submitted; waiting for real ring packets")
     async def connect_once(self, device):
         disconnected = asyncio.Event()
         self.connection_id = str(uuid4())
@@ -140,6 +171,7 @@ class Transport:
         self._connected_at_ns = None
         self._last_packet_ns = None
         self._phase = "subscribing"
+        self._sensor_attempted = False
         self.emit("status", "Connecting")
         self._publish_health()
         options = {"winrt": {"use_cached_services": False}} if sys.platform == "win32" else {}
@@ -160,6 +192,7 @@ class Transport:
                                     self._subscribed[str(char.uuid).lower()] = char
                                     self.emit("log", f"Listening on {char.uuid}")
                     if not self._subscribed: raise RuntimeError("No supported gesture notification subscriptions succeeded; see Diagnostics for details")
+                    await self._enable_gesture_sensor(client)
                     self._publish_receive_state()
                     battery = client.services.get_characteristic(BATTERY)
                     async def read_battery():

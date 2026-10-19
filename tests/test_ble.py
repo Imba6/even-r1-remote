@@ -6,25 +6,28 @@ import pytest
 
 from even_r1 import ble
 from even_r1.ble import NOTIFY, SERVICE, Transport
+from even_r1.gesture_sensor import TOUCH_ENABLE_FRAME, TOUCH_ENABLE_UUID
 
 
 @pytest.fixture
 def peer(monkeypatch):
     state = SimpleNamespace(calls=[], options=None, starts=Counter(), stop_fail=set(),
-                            start_fail=set(), closed=False, connected=True)
+                            start_fail=set(), closed=False, connected=True, writes=[],
+                            has_write_characteristic=True, write_error=None, write_callback=None)
     chars = [SimpleNamespace(uuid=uuid, properties=["notify"], handle=index)
              for index, uuid in enumerate(sorted(NOTIFY), 1)]
     state.chars = chars
+    state.write_char = SimpleNamespace(uuid=TOUCH_ENABLE_UUID, properties=["write-without-response"], handle=3)
     dfu = SimpleNamespace(uuid="8ec90003-f315-4f60-9fb8-838830daea50", properties=["notify", "write"])
 
     class Services(list):
         def get_characteristic(self, uuid):
-            return None
+            return state.write_char if uuid == TOUCH_ENABLE_UUID and state.has_write_characteristic else None
 
     class Client:
         def __init__(self, device, **options):
             state.options = options
-            self.services = Services([SimpleNamespace(uuid=SERVICE, characteristics=chars),
+            self.services = Services([SimpleNamespace(uuid=SERVICE, characteristics=[*chars, state.write_char]),
                                       SimpleNamespace(uuid="0000fe59-0000-1000-8000-00805f9b34fb", characteristics=[dfu])])
 
         @property
@@ -32,6 +35,7 @@ def peer(monkeypatch):
             return state.connected
 
         async def __aenter__(self):
+            state.closed = False
             return self
 
         async def __aexit__(self, *args):
@@ -50,8 +54,16 @@ def peer(monkeypatch):
             if char.uuid in state.stop_fail:
                 raise OSError("disable denied")
 
-        async def write_gatt_char(self, *args, **kwargs):
-            raise AssertionError("No application writes")
+        async def write_gatt_char(self, char, data, *, response):
+            # Every permitted write must be this exact, narrow request; no DFU,
+            # health, auth, arbitrary bytes, or cleanup disable is accepted.
+            assert char is state.write_char and char.uuid == TOUCH_ENABLE_UUID
+            assert data == TOUCH_ENABLE_FRAME and response is False
+            state.writes.append((char.uuid, bytes(data), response, list(state.calls)))
+            if state.write_error:
+                raise state.write_error
+            if state.write_callback:
+                state.write_callback()
 
         async def pair(self, *args, **kwargs):
             raise AssertionError("No pairing changes")
@@ -137,6 +149,7 @@ async def test_manual_refresh_coalesces_and_rearms_both_channels(peer, monkeypat
     assert all(result["success"] for result in refreshed[0]["refresh_results"])
     assert all(timeout == ble.SUBSCRIPTION_TIMEOUT for timeout in timeouts)
     assert not transport.refresh_requested.is_set()
+    assert len(peer.writes) == 1  # CCCD refresh never resends the touch command.
 
 
 async def test_refresh_failure_counts_only_remaining_subscription(peer):
@@ -267,3 +280,105 @@ async def test_heartbeat_ages_use_elapsed_clock_and_reset_for_new_connection(pee
     new_health = [value for kind, value in events if kind == "connection_health" and value["connection_id"] == transport.connection_id]
     assert new_health[0]["packet_count"] == 0 and new_health[0]["seconds_since_last_packet"] is None
     assert new_health[0]["seconds_connected"] is None
+    assert len(peer.writes) == 2  # A real replacement connection needs one request.
+
+
+async def test_touch_enable_sent_once_after_both_subscriptions_without_claiming_rx(peer):
+    events = []
+
+    def emit(kind, value):
+        events.append((kind, value))
+        if (kind, value) == ("status", "Connected · waiting for first packet"):
+            transport.stop.set()
+
+    transport = Transport(emit)
+    await transport.connect_once(object())
+    assert len(peer.writes) == 1
+    uuid, frame, response, before_write = peer.writes[0]
+    assert uuid == TOUCH_ENABLE_UUID and frame == TOUCH_ENABLE_FRAME and response is False
+    assert before_write == [("start", channel) for channel in sorted(NOTIFY)]
+    sensor = [value for kind, value in events if kind == "sensor_state"]
+    assert [value["state"] for value in sensor] == ["enabling", "requested"]
+    assert all(value["connection_id"] == transport.connection_id for value in sensor)
+    assert not any(kind == "raw_packet" for kind, _ in events)
+    assert not any(kind == "status" and "receiving" in value for kind, value in events)
+
+
+@pytest.mark.parametrize("failure", [OSError("write denied"), TimeoutError("write timed out")])
+async def test_touch_enable_failure_retains_live_raw_channel(peer, failure):
+    peer.write_error = failure
+    events = []
+
+    def emit(kind, value):
+        events.append((kind, value))
+        if (kind, value) == ("status", "Connected · waiting for first packet"):
+            transport.notification(peer.chars[0], bytes.fromhex("00 09 61 00 01 00 00 01 00 00 00"))
+            transport.stop.set()
+
+    transport = Transport(emit)
+    await transport.connect_once(object())
+    assert len(peer.writes) == 1
+    failed = next(value for kind, value in events if kind == "sensor_state" and value["state"] == "error")
+    assert str(failure) in failed["detail"]
+    assert any(kind == "raw_packet" for kind, _ in events)
+    assert any(kind == "gesture" for kind, _ in events)
+    assert ("status", "Connected · receiving packets") in events
+
+
+@pytest.mark.parametrize("reason", ["missing", "wrong_properties", "wrong_uuid", "one_channel"])
+async def test_touch_enable_unavailable_never_writes_or_blocks_existing_notifications(peer, reason):
+    if reason == "missing":
+        peer.has_write_characteristic = False
+    elif reason == "wrong_properties":
+        peer.write_char.properties = ["write"]
+    elif reason == "wrong_uuid":
+        peer.write_char.uuid = "8ec90003-f315-4f60-9fb8-838830daea50"
+    else:
+        peer.start_fail.add((sorted(NOTIFY)[1], 1))
+    events = []
+
+    def emit(kind, value):
+        events.append((kind, value))
+        if (kind, value) == ("status", "Connected · waiting for first packet"):
+            transport.notification(peer.chars[0], b"\xab")
+            transport.stop.set()
+
+    transport = Transport(emit)
+    await transport.connect_once(object())
+    assert not peer.writes
+    assert any(kind == "sensor_state" and value["state"] == "unavailable" for kind, value in events)
+    assert any(kind == "raw_packet" for kind, _ in events)
+
+
+async def test_immediate_gesture_during_enable_write_is_preserved(peer):
+    events = []
+
+    def emit(kind, value):
+        events.append((kind, value))
+        if kind == "status" and value == "Connected · receiving packets":
+            transport.stop.set()
+
+    transport = Transport(emit)
+    peer.write_callback = lambda: transport.notification(peer.chars[0], bytes.fromhex("00 09 61 00 04 00 00 01 00 00 00"))
+    await transport.connect_once(object())
+    assert len(peer.writes) == 1
+    assert any(kind == "raw_packet" and value["hex"].startswith("00 09 61 00 04") for kind, value in events)
+    assert ("status", "Connected · receiving packets") in events
+    assert ("status", "Connected · waiting for first packet") not in events
+
+
+async def test_passive_transport_option_never_activates_sensor(peer):
+    events = []
+
+    def emit(kind, value):
+        events.append((kind, value))
+        if (kind, value) == ("status", "Connected · waiting for first packet"):
+            transport.notification(peer.chars[0], b"\xab")
+            transport.stop.set()
+
+    transport = Transport(emit, activate_sensor=False)
+    await transport.connect_once(object())
+    assert not peer.writes
+    assert len([operation for operation, _ in peer.calls if operation == "start"]) == 2
+    assert any(kind == "raw_packet" for kind, _ in events)
+    assert any(kind == "sensor_state" and "Passive capture mode" in value["detail"] for kind, value in events)

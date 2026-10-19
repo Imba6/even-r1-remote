@@ -7,8 +7,8 @@ BleCommunicator ring paths, ring-wire-format-2026-08-20.md and ring-related test
 https://github.com/not-benny/hermes-g2
 
 The wire-format note describes health transport, which is not needed here.
-Communicator session/probe commands are not ported. No application writes are
-implemented. Notification subscriptions necessarily perform CCCD operations
+Communicator session/probe commands are not ported. Initially no application writes
+were implemented; see the validated touch-source request below. Subscriptions perform CCCD operations
 internally through Bleak. FE59 is only enumerated; no DFU operations occur.
 
 Direct packets are exactly three bytes: FF0401 tap, FF0402 double, FF0320 hold.
@@ -83,7 +83,27 @@ Sources:
 - [Role assignment](https://github.com/kalanihelekunihi/evenRealities-openCFW/blob/5a55562c8a4fb2ac52fa791c0ca7c4e4131e5395/r1/docs/correlation/CONNECTION-ROLE-ASSIGNMENT-CORRELATION.md)
 
 An exact touch-only encoder was checked offline against captured first-party
-CRC vectors before a local hardware experiment. The installed passive build
-does not automatically send this command. Compatibility with this ring's
-unknown firmware still requires actual gesture packets. Private capture data
-and experimental hardware launchers stay outside the public repository.
+CRC vectors before a local hardware experiment. Private capture data and
+experimental hardware launchers stay outside the public repository.
+
+## Observed gesture reception and production activation (2026-10-19)
+
+The local experiment submitted exactly one 19-byte touchSwitch request, then
+received real eleven-byte `00 09 61 00` notifications. The ring later produced
+all supported codes: long press, single tap, double tap, both swipe directions
+and release. First gesture reception was about an hour after the request, so
+the timestamp alone does not establish immediate activation or its necessity
+on every firmware. This confirms the actual packet format on this ring and
+supports the documented activation path; it does not validate Windows actions.
+
+Version 0.1.6 submits only that fixed request to BAE80012, without response,
+once per connection and after both notification subscriptions. It does not
+send phone-role authentication, health, persistent settings, reset or firmware
+commands. Subscription refresh does not resend activation. An unavailable or
+failed write preserves raw reception and produces an explicit sensor state.
+The CLI remains passive with application activation disabled.
+
+Unknown eleven-byte codes 09 and 0A were also observed and remain ignored for
+actions. The supported decoder still matches Hermes. Its combined parameter
+field preserves the two wire bytes; firmware reconstruction calls them distance
+and velocity. Actions do not depend on that combined value.

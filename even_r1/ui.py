@@ -201,7 +201,7 @@ class Window(QMainWindow):
         self.tabs.addTab(prefs, "Preferences")
         diag = QWidget()
         dl = QVBoxLayout(diag)
-        dl.addWidget(QLabel("Live GATT, notification bytes and decoder events. No initialization commands are sent."))
+        dl.addWidget(QLabel("Live GATT, notification bytes and decoder events. One touch-sensor enable request is sent after subscription."))
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.document().setMaximumBlockCount(1500)
@@ -215,7 +215,7 @@ class Window(QMainWindow):
         self.capture_panel.recording_changed.connect(self.capture_recording_changed)
         self.capture_panel.recording_changed.connect(self.packet_viewer.set_recording)
         self.tabs.addTab(self.capture_panel, "Data capture")
-        footer = QLabel("INDEPENDENT PROJECT     /     Gesture control awaits hardware validation")
+        footer = QLabel("INDEPENDENT PROJECT     /     Direct ring gestures · Windows controls start paused")
         footer.setObjectName("muted")
         layout.addWidget(footer)
         self.load_mapping()
@@ -338,7 +338,9 @@ class Window(QMainWindow):
             if not value.startswith("Connected"):
                 self.battery.setText("Battery —   ·   Signal: see last scan")
         elif kind == "battery": self.battery.setText(f"Battery {str(value) + '%' if value is not None else '—'}   ·   Signal: see last scan")
+        elif kind == "sensor_state": self.packet_viewer.set_sensor_state(value)
         elif kind == "gesture":
+            self.packet_viewer.note_gesture()
             self.ring.pulse()
             try: result = self.actions.execute(value.gesture)
             except Exception as exc:
@@ -405,6 +407,8 @@ def main():
     app.setStyleSheet(STYLE)
     window = Window()
     window.show()
+    if "--connect" in sys.argv and window.settings.data["address"] and not window.settings.data["auto_connect"]:
+        QTimer.singleShot(300, window.connect_ring)
     if "--live-packets" in sys.argv:
         window.tabs.setCurrentWidget(window.packet_viewer)
     if "--packet-log" in sys.argv:

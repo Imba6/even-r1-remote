@@ -6,6 +6,13 @@ Original attribution belongs to Hermes G2 / Faceclaw contributors. The upstream
 project is GPL-3.0; this derivative is distributed under GPL-3.0-or-later.
 https://github.com/not-benny/hermes-g2
 
+The fixed touch-source enable request and protocol layout were independently
+implemented from public reverse-engineering facts in evenRealities-openCFW,
+revision 5a55562c8a4fb2ac52fa791c0ca7c4e4131e5395 (touch handler, RAM source
+manager and gesture dispatcher) and revision 832137ec (compact phone checksum).
+No firmware binaries or reconstructed firmware implementation are bundled.
+https://github.com/kalanihelekunihi/evenRealities-openCFW
+
 Runtime components include Bleak (MIT), pynput (LGPL-3.0), PySide6/Qt
 (LGPL-3.0/GPL/commercial), Python (PSF) and WinRT Python bindings (MIT).
 PyInstaller provides an application bundling exception. Dependency license files

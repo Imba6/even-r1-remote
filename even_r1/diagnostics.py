@@ -25,7 +25,7 @@ def main():
         logging.info(line)
     async def run():
         nonlocal trial_open
-        transport = Transport(emit)
+        transport = Transport(emit, activate_sensor=False)
         if not args.address:
             for device, name, rssi in await transport.scan():
                 print(f"{name} | {device.address} | {rssi} dBm (advertisement)")

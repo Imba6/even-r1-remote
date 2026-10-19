@@ -15,6 +15,7 @@ class LivePacketViewer(QWidget):
         self.connection_id = None
         self.connection_packet_count = 0
         self.connected = False
+        self.gesture_received = False
         layout = QVBoxLayout(self)
         tools = QHBoxLayout()
         self.count_label = QLabel("0 packets displayed · 0 live RX · 0 imported FILE")
@@ -42,6 +43,9 @@ class LivePacketViewer(QWidget):
         self.recording_label = QLabel()
         self.set_recording(False)
         layout.addWidget(self.recording_label)
+        self.sensor_label = QLabel("Gesture sensor: waiting for a connection")
+        self.sensor_label.setWordWrap(True)
+        layout.addWidget(self.sensor_label)
         health = QHBoxLayout()
         self.health_label = QLabel("Disconnected · no live packets received in this connection")
         self.health_label.setWordWrap(True)
@@ -80,14 +84,38 @@ class LivePacketViewer(QWidget):
         self.refresh_button.setEnabled(self.connected)
         if not self.connected:
             self.health_label.setText(f"{status} · {self.connection_packet_count} live RX in last connection")
+            self.gesture_received = False
+            self.sensor_label.setText("Gesture sensor: waiting for a connection")
+            self.sensor_label.setStyleSheet("")
         elif self.connection_packet_count == 0:
             self.health_label.setText("Connected · waiting for first packet · 0 live RX in current connection")
+
+    def set_sensor_state(self, state):
+        if self.gesture_received:
+            return
+        messages = {
+            "enabling": "Gesture sensor: sending enable request…",
+            "requested": "Gesture sensor: enable request sent · waiting for gesture packets",
+            "unavailable": "Gesture sensor: unavailable",
+            "error": "Gesture sensor: activation failed",
+        }
+        message = messages.get(state["state"], "Gesture sensor: waiting for a connection")
+        if state["state"] in {"error", "unavailable"} and state.get("detail"):
+            message += " · " + state["detail"]
+        self.sensor_label.setText(message)
+        self.sensor_label.setStyleSheet("color: #e8c18b;")
+
+    def note_gesture(self):
+        self.gesture_received = True
+        self.sensor_label.setText("Gesture sensor: real gesture packets received")
+        self.sensor_label.setStyleSheet("color: #91e5c0;")
 
     def set_connection_health(self, health):
         connection_id = health.get("connection_id")
         if connection_id != self.connection_id:
             self.connection_id = connection_id
             self.connection_packet_count = 0
+            self.gesture_received = False
         self.connection_packet_count = health["packet_count"]
         phase = health["phase"]
         self.connected = phase in {"waiting", "receiving", "refreshing"}

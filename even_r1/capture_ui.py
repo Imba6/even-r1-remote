@@ -141,7 +141,7 @@ class CapturePanel(QWidget):
                     self.session.record_packet(value)
                     self.count_label.setText(f"{self.session.packet_count} packets recorded")
                 self.packets.appendPlainText(f"{value['timestamp_utc']}  {value['characteristic']}  {value['length']} B\n{value['hex']}")
-            elif self.recording and kind in {"status", "gatt", "log", "battery", "gesture"}:
+            elif self.recording and kind in {"status", "gatt", "log", "battery", "gesture", "sensor_state"}:
                 self.session.event(kind, value)
         except OSError as exc:
             self.failed(exc)
