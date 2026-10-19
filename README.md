@@ -58,6 +58,14 @@ FILE, while incoming live notifications are marked RX. **Export all text** saves
 the entire displayed history. The recording indicator independently shows whether
 new live data is being saved to a capture file.
 
+The viewer separates imported FILE and live RX totals. Current connection status
+shows the number of active subscriptions, received packets and time since the
+last real notification. A successful subscription with no data is explicitly
+shown as waiting for the first packet. **Refresh subscriptions** re-subscribes
+the active notification channels using standard CCCD operations. It sends no
+application commands. Windows connections discover fresh services, and intentional
+disconnects disable active subscriptions before closing the connection.
+
 Connect the selected ring (a saved ring can be selected before scanning), then
 open **Data capture**. Press **Start recording** to
 create a new local JSONL file. Windows controls are paused and disabled while

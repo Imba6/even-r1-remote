@@ -108,7 +108,7 @@ async def test_one_denied_notification_keeps_other_channel_listening(notificatio
     events=[]
     def emit(kind,value):
         events.append((kind,value))
-        if (kind,value)==('status','Connected · listening'):
+        if (kind,value)==('status','Connected · waiting for first packet'):
             char,callback=state.callbacks[0]
             callback(char,bytes.fromhex('ff0401'))
             transport.stop.set()
@@ -117,7 +117,7 @@ async def test_one_denied_notification_keeps_other_channel_listening(notificatio
 
     assert set(state.attempts)==NOTIFY
     assert len(state.callbacks)==1
-    assert ('status','Connected · listening') in events
+    assert ('status','Connected · waiting for first packet') in events
     assert any(kind=='gesture' and value.gesture==Gesture.TAP for kind,value in events)
     assert any(kind=='log' and denied in value and 'authentication' in value for kind,value in events)
     assert state.closed and not state.writes and not state.pairings

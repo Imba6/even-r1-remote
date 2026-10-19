@@ -4,10 +4,12 @@ No Bluetooth connection or Windows input controller is created. Notifications
 pass through the same raw-packet event path as a connected ring.
 """
 import json
+import threading
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import QApplication
 
@@ -210,6 +212,49 @@ def test_saved_capture_import_keeps_duplicates_and_live_history_then_exports_all
     assert destination.read_text(encoding="utf-8") == text
 
 
+def health(phase="waiting", connection_id="connection-a", packet_count=0, age=None):
+    return {"phase": phase, "connection_id": connection_id, "subscribed_count": 2,
+            "subscribed_channels": sorted(NOTIFY), "packet_count": packet_count,
+            "seconds_since_last_packet": age, "seconds_connected": 8.0}
+
+
+def test_imported_history_never_implies_current_connection_is_receiving(viewer, tmp_path):
+    transport, channels, captured = notification_source(lambda packet: None)
+    fill_history(transport, channels, amount=3)
+    path = tmp_path / "old.jsonl"
+    path.write_text("\n".join(json.dumps({"type": "notification", **row}) for row in captured), encoding="utf-8")
+    viewer.set_connection_health(health())
+    viewer.load_capture(path)
+
+    assert viewer.received_count == viewer.imported_count == 3
+    assert viewer.live_count == viewer.connection_packet_count == 0
+    assert "0 live RX" in viewer.count_label.text()
+    assert "3 imported FILE" in viewer.count_label.text()
+    assert "waiting for first packet" in viewer.health_label.text()
+    assert "0 live RX in current connection" in viewer.health_label.text()
+
+    viewer.append_packet(captured[0])
+    viewer.set_connection_health(health("receiving", packet_count=1, age=1.5))
+    assert viewer.live_count == viewer.connection_packet_count == 1
+    assert viewer.imported_count == 3
+    assert "last RX 1.5 s ago" in viewer.health_label.text()
+    assert "1 live RX in current connection" in viewer.health_label.text()
+
+    viewer.set_connection_health(health("disconnected", packet_count=1, age=2))
+    assert "Disconnected" in viewer.health_label.text()
+    assert not viewer.refresh_button.isEnabled()
+    viewer.set_connection_health(health("subscribing", connection_id="connection-b"))
+    assert viewer.connection_packet_count == 0
+    assert viewer.live_count == 1
+    assert not viewer.refresh_button.isEnabled()
+    viewer.set_connection_health(health(connection_id="connection-b"))
+    assert "waiting for first packet" in viewer.health_label.text()
+    assert viewer.refresh_button.isEnabled()
+    viewer.set_connection_health(health("refreshing", connection_id="connection-b"))
+    assert "Refreshing" in viewer.health_label.text()
+    assert not viewer.refresh_button.isEnabled()
+
+
 @pytest.fixture
 def window(app, monkeypatch, tmp_path):
     class IsolatedActions:
@@ -257,3 +302,78 @@ def test_window_displays_raw_events_once_independent_of_file_recording(window):
     assert len(recorded) == 1 and recorded[0]["hex"] == "F5 22 00 EF"
     assert rows[-1]["type"] == "session_end" and rows[-1]["packet_count"] == 1
     window.actions.execute.assert_not_called()
+
+
+def test_health_heartbeat_updates_view_without_diagnostics_or_capture_spam(window):
+    window.on_transport_event("status", "Connected · waiting for first packet")
+    window.capture_panel.start_recording()
+    log_before = window.log.toPlainText()
+    rows_before = window.capture_panel.last_path.read_text(encoding="utf-8")
+    window.on_transport_event("connection_health", health())
+    window.on_transport_event("connection_health", health("receiving", packet_count=7, age=2.5))
+
+    assert window.log.toPlainText() == log_before
+    assert window.capture_panel.last_path.read_text(encoding="utf-8") == rows_before
+    assert "last RX 2.5 s ago" in window.packet_viewer.health_label.text()
+    assert "7 live RX in current connection" in window.packet_viewer.health_label.text()
+
+
+def test_subscription_refresh_requires_an_active_connected_worker(window):
+    window.worker = SimpleNamespace(isRunning=Mock(return_value=True), refresh_notifications=Mock())
+    window.refresh_notifications()
+    window.worker.refresh_notifications.assert_not_called()
+    window.on_transport_event("status", "Connected · waiting for first packet")
+    assert window.packet_viewer.refresh_button.isEnabled()
+    window.packet_viewer.refresh_button.click()
+    window.worker.refresh_notifications.assert_called_once_with()
+    window.worker.isRunning.return_value = False
+    window.refresh_notifications()
+    window.worker.refresh_notifications.assert_called_once_with()
+    window.on_transport_event("status", "Disconnected")
+    assert not window.packet_viewer.refresh_button.isEnabled()
+
+
+def test_worker_schedules_refresh_on_its_event_loop_and_handles_stopped_worker(monkeypatch):
+    worker = ui.Worker("test-address")
+    worker.loop = SimpleNamespace(call_soon_threadsafe=Mock())
+    worker.transport = SimpleNamespace(request_refresh=Mock())
+    monkeypatch.setattr(worker, "isRunning", lambda: True)
+    assert worker.refresh_notifications()
+    worker.loop.call_soon_threadsafe.assert_called_once_with(worker.transport.request_refresh)
+    worker.cancelled = True
+    assert not worker.refresh_notifications()
+    worker.cancelled = False
+    worker.loop.call_soon_threadsafe.side_effect = RuntimeError("loop closed")
+    assert not worker.refresh_notifications()
+    monkeypatch.setattr(worker, "isRunning", lambda: False)
+    assert not worker.refresh_notifications()
+
+
+def test_real_worker_thread_delivers_raw_notifications_to_main_window(window, app, monkeypatch):
+    gui_thread = threading.get_ident()
+    emission_threads = []
+    class ThreadTransport(Transport):
+        async def run(self, address, **kwargs):
+            emission_threads.append(threading.get_ident())
+            for uuid in sorted(NOTIFY):
+                self.notification(SimpleNamespace(uuid=uuid), bytes.fromhex("F5 11 AA 77 EF"))
+
+    monkeypatch.setattr(ui, "Transport", ThreadTransport)
+    loop = QEventLoop()
+    window.start_worker("test-address")
+    worker = window.worker
+    worker.finished.connect(loop.quit)
+    timeout = QTimer()
+    timeout.setSingleShot(True)
+    timeout.timeout.connect(loop.quit)
+    timeout.start(5000)
+    loop.exec()
+    timeout.stop()
+    assert worker.wait(2000)
+    app.processEvents()
+
+    assert emission_threads and emission_threads[0] != gui_thread
+    assert window.packet_viewer.live_count == window.packet_viewer.received_count == 2
+    assert window.packet_viewer.imported_count == 0
+    assert window.packet_viewer.packets.toPlainText().count("F5 11 AA 77 EF") == 2
+    assert window.packet_viewer.packets.toPlainText().count("RX") == 2

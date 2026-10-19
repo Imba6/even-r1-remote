@@ -10,9 +10,14 @@ class LivePacketViewer(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.received_count = 0
+        self.live_count = 0
+        self.imported_count = 0
+        self.connection_id = None
+        self.connection_packet_count = 0
+        self.connected = False
         layout = QVBoxLayout(self)
         tools = QHBoxLayout()
-        self.count_label = QLabel("0 packets displayed")
+        self.count_label = QLabel("0 packets displayed · 0 live RX · 0 imported FILE")
         tools.addWidget(self.count_label)
         tools.addStretch()
         self.auto_scroll = QCheckBox("Auto-scroll")
@@ -37,6 +42,15 @@ class LivePacketViewer(QWidget):
         self.recording_label = QLabel()
         self.set_recording(False)
         layout.addWidget(self.recording_label)
+        health = QHBoxLayout()
+        self.health_label = QLabel("Disconnected · no live packets received in this connection")
+        self.health_label.setWordWrap(True)
+        health.addWidget(self.health_label, 1)
+        self.refresh_button = QPushButton("Refresh subscriptions")
+        self.refresh_button.setEnabled(False)
+        self.refresh_button.setToolTip("Re-subscribe to both ring notification channels on the current connection")
+        health.addWidget(self.refresh_button)
+        layout.addLayout(health)
         self.source_label = QLabel("All received notifications stay here until the application closes. Unknown and duplicate packets are included.")
         self.source_label.setWordWrap(True)
         layout.addWidget(self.source_label)
@@ -61,19 +75,57 @@ class LivePacketViewer(QWidget):
             bar = self.packets.verticalScrollBar()
             bar.setValue(bar.maximum())
 
+    def set_connection_status(self, status):
+        self.connected = status.startswith("Connected")
+        self.refresh_button.setEnabled(self.connected)
+        if not self.connected:
+            self.health_label.setText(f"{status} · {self.connection_packet_count} live RX in last connection")
+        elif self.connection_packet_count == 0:
+            self.health_label.setText("Connected · waiting for first packet · 0 live RX in current connection")
+
+    def set_connection_health(self, health):
+        connection_id = health.get("connection_id")
+        if connection_id != self.connection_id:
+            self.connection_id = connection_id
+            self.connection_packet_count = 0
+        self.connection_packet_count = health["packet_count"]
+        phase = health["phase"]
+        self.connected = phase in {"waiting", "receiving", "refreshing"}
+        self.refresh_button.setEnabled(self.connected and phase != "refreshing")
+        count = self.connection_packet_count
+        channels = health["subscribed_count"]
+        if phase == "subscribing":
+            message = f"Subscribing · {channels} channel(s) ready"
+        elif phase == "refreshing":
+            message = "Refreshing notification subscriptions…"
+        elif phase == "disconnected":
+            message = "Disconnected"
+        elif count == 0:
+            message = f"Subscribed on {channels} channel(s) · waiting for first packet"
+        else:
+            age = health.get("seconds_since_last_packet")
+            age_text = f"{age:.1f} s ago" if age is not None else "time unavailable"
+            message = f"Subscribed on {channels} channel(s) · last RX {age_text}"
+        self.health_label.setText(f"{message} · {count} live RX in current connection")
+        self.health_label.setStyleSheet("color: #91e5c0;" if count and self.connected else "color: #e8c18b;")
+
     def append_packet(self, packet, origin="live"):
         bar = self.packets.verticalScrollBar()
         xbar = self.packets.horizontalScrollBar()
         position, xpos = bar.value(), xbar.value()
         self.received_count += 1
         source = "FILE" if origin == "file" else "RX"
+        if origin == "file":
+            self.imported_count += 1
+        else:
+            self.live_count += 1
         text = (f"#{self.received_count:06d}  {packet['timestamp_utc']}  {source}  "
                 f"{packet['characteristic']}  {packet['length']} B\n"
                 f"{packet['hex'] or '(empty payload)'}")
         cursor = QTextCursor(self.packets.document())
         cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.insertText(("\n\n" if not self.packets.document().isEmpty() else "") + text)
-        self.count_label.setText(f"{self.received_count} packets displayed")
+        self.count_label.setText(f"{self.received_count} packets displayed · {self.live_count} live RX · {self.imported_count} imported FILE")
         if self.auto_scroll.isChecked():
             self.follow_latest(True)
         else:

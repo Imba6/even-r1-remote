@@ -52,3 +52,38 @@ Raw notifications during user gesture attempts included shapes 00 09 8C 00 xx,
 00 09 8B 00 xx xx and 00 1A 89 01 01 00 00. Their semantics remain unverified;
 they are not reclassified as gestures. No known FF or 00 09 61 00 gesture packets
 were captured. Hardware gesture control remains unvalidated.
+
+## Receive silence and touch-source research (2026-10-19)
+
+After later successful subscriptions, a separate receive probe attached both
+Bleak and direct WinRT ValueChanged handlers. Both channel CCCD reads returned
+success / NOTIFY before and after subscription, but a 45-second gesture attempt
+produced no notifications in either handler. A separate real QThread/UI check
+confirmed delivery from the raw notification callback into the packet viewer.
+This distinguishes receive silence from an interface filtering problem.
+
+The viewer now separates imported FILE history from live RX and current
+connection counts. Transport discovers uncached Windows services, explicitly
+stops active notifications before intentional disconnect, and supports bounded
+manual CCCD refresh. These changes do not establish gesture compatibility.
+
+Additional primary reverse-engineering evidence identifies the touch source as
+separate from notification subscription. Stock 2.2.6.0009 system command
+1:00:07 (`touchSwitch`) with the exact two-byte payload `02 01` opens RAM touch
+source zero. Selector one is diagnostic only. The reconstructed handler and
+source manager show no persistent identity, flash, health or firmware operation.
+The acknowledgement precedes the source operation and cannot prove activation.
+Subscribing channel one assigns the glasses role; phone-role authentication on
+that same link must not be added as a generic initialization step.
+
+Sources:
+- [Protocol surface](https://github.com/kalanihelekunihi/evenRealities-openCFW/blob/5a55562c8a4fb2ac52fa791c0ca7c4e4131e5395/r1/docs/protocol.md)
+- [Recovered touch-switch handler](https://github.com/kalanihelekunihi/evenRealities-openCFW/blob/5a55562c8a4fb2ac52fa791c0ca7c4e4131e5395/r1/components/runtime/native_touch_switch.c)
+- [RAM touch-source manager](https://github.com/kalanihelekunihi/evenRealities-openCFW/blob/5a55562c8a4fb2ac52fa791c0ca7c4e4131e5395/r1/components/runtime/native_touch_services.c)
+- [Role assignment](https://github.com/kalanihelekunihi/evenRealities-openCFW/blob/5a55562c8a4fb2ac52fa791c0ca7c4e4131e5395/r1/docs/correlation/CONNECTION-ROLE-ASSIGNMENT-CORRELATION.md)
+
+An exact touch-only encoder was checked offline against captured first-party
+CRC vectors before a local hardware experiment. The installed passive build
+does not automatically send this command. Compatibility with this ring's
+unknown firmware still requires actual gesture packets. Private capture data
+and experimental hardware launchers stay outside the public repository.

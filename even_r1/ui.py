@@ -28,7 +28,8 @@ class Worker(QThread):
         self.transport = None
         self.cancelled = False
     def publish(self, kind, value):
-        logging.info("%s %s", kind, value)
+        if kind != "connection_health":
+            logging.info("%s %s", kind, value)
         self.update_ready.emit(kind, value)
     def run(self):
         async def work():
@@ -48,6 +49,14 @@ class Worker(QThread):
         if self.loop and self.transport:
             try: self.loop.call_soon_threadsafe(self.transport.stop.set)
             except RuntimeError: pass
+    def refresh_notifications(self):
+        if self.cancelled or not self.isRunning() or not self.loop or not self.transport:
+            return False
+        try:
+            self.loop.call_soon_threadsafe(self.transport.request_refresh)
+        except RuntimeError:
+            return False
+        return True
 
 class Ring(QWidget):
     def __init__(self):
@@ -200,6 +209,7 @@ class Window(QMainWindow):
         dl.addWidget(button("Export diagnostic log…", self.export))
         self.tabs.addTab(diag, "Diagnostics")
         self.packet_viewer = LivePacketViewer()
+        self.packet_viewer.refresh_button.clicked.connect(self.refresh_notifications)
         self.tabs.addTab(self.packet_viewer, "All packets")
         self.capture_panel = CapturePanel(self.capture_metadata)
         self.capture_panel.recording_changed.connect(self.capture_recording_changed)
@@ -295,6 +305,10 @@ class Window(QMainWindow):
         self.enable.setChecked(False)
         if self.worker: self.worker.stop()
         self.on_transport_event("status", "Disconnecting")
+    def refresh_notifications(self):
+        if (self.worker and self.worker.isRunning()
+                and self.status.text().startswith("Connected")):
+            self.worker.refresh_notifications()
     def capture_metadata(self):
         return {"app_version": __version__, "address": self.worker.address if self.worker else self.settings.data["address"], "status_at_start": self.status.text()}
     def capture_recording_changed(self, active):
@@ -302,6 +316,9 @@ class Window(QMainWindow):
             self.enable.setChecked(False)
         self.enable.setEnabled(not active)
     def on_transport_event(self, kind, value):
+        if kind == "connection_health":
+            self.packet_viewer.set_connection_health(value)
+            return
         self.capture_panel.feed(kind, value)
         if kind == "raw_packet":
             self.packet_viewer.append_packet(value)
@@ -317,6 +334,7 @@ class Window(QMainWindow):
             self.status.setText(f"Scan complete · {len(value)} ring(s) found" if value else "Scan complete · no ring found")
         elif kind == "status":
             self.status.setText(value)
+            self.packet_viewer.set_connection_status(value)
             if not value.startswith("Connected"):
                 self.battery.setText("Battery —   ·   Signal: see last scan")
         elif kind == "battery": self.battery.setText(f"Battery {str(value) + '%' if value is not None else '—'}   ·   Signal: see last scan")
